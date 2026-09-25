@@ -1,14 +1,20 @@
 """Memory orchestration for MARS."""
 
+from .formation import MemoryCandidate, MemoryFormation
 from .models import Memory
 from .store import SQLiteMemoryStore
 
 
 class MemoryManager:
-    """High-level interface for storing and retrieving persistent memories."""
+    """High-level interface for storing, retrieving, and forming memories."""
 
-    def __init__(self, store: SQLiteMemoryStore) -> None:
+    def __init__(
+        self,
+        store: SQLiteMemoryStore,
+        formation: MemoryFormation | None = None,
+    ) -> None:
         self.store = store
+        self.formation = formation or MemoryFormation()
 
     def remember(self, content: str, category: str = "general") -> Memory:
         return self.store.add(content, category)
@@ -18,3 +24,12 @@ class MemoryManager:
 
     def recent(self, limit: int = 20) -> list[Memory]:
         return self.store.list_recent(limit=limit)
+
+    def extract(self, message: str) -> MemoryCandidate | None:
+        return self.formation.extract(message)
+
+    def remember_if_explicit(self, message: str) -> Memory | None:
+        candidate = self.extract(message)
+        if candidate is None:
+            return None
+        return self.remember(candidate.content, candidate.category)
