@@ -11,39 +11,50 @@ class SQLiteMemoryStore:
 
     def __init__(self, database_path: str = "data/mars.db") -> None:
         self.database_path = database_path
-        if database_path != ":memory:":
+        self._connection: sqlite3.Connection | None = None
+
+        if database_path == ":memory:":
+            self._connection = sqlite3.connect(database_path)
+            self._connection.row_factory = sqlite3.Row
+        else:
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
+        if self._connection is not None:
+            return self._connection
+
         connection = sqlite3.connect(self.database_path)
         connection.row_factory = sqlite3.Row
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS memories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    content TEXT NOT NULL,
-                    category TEXT NOT NULL DEFAULT 'general',
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """
+        connection = self._connect()
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
+            """
+        )
+        connection.commit()
 
     def add(self, content: str, category: str = "general") -> Memory:
         content = content.strip()
         if not content:
             raise ValueError("Memory content cannot be empty.")
 
-        with self._connect() as connection:
-            cursor = connection.execute(
-                "INSERT INTO memories (content, category) VALUES (?, ?)",
-                (content, category),
-            )
-            memory_id = cursor.lastrowid
+        connection = self._connect()
+        cursor = connection.execute(
+            "INSERT INTO memories (content, category) VALUES (?, ?)",
+            (content, category),
+        )
+        connection.commit()
+        memory_id = cursor.lastrowid
 
         return Memory(id=memory_id, content=content, category=category)
 
@@ -59,17 +70,17 @@ class SQLiteMemoryStore:
         clauses = " OR ".join("LOWER(content) LIKE ?" for _ in terms)
         parameters = [f"%{term}%" for term in terms]
 
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT id, content, category
-                FROM memories
-                WHERE {clauses}
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                [*parameters, limit],
-            ).fetchall()
+        connection = self._connect()
+        rows = connection.execute(
+            f"""
+            SELECT id, content, category
+            FROM memories
+            WHERE {clauses}
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            [*parameters, limit],
+        ).fetchall()
 
         return [
             Memory(id=row["id"], content=row["content"], category=row["category"])
@@ -77,18 +88,30 @@ class SQLiteMemoryStore:
         ]
 
     def list_recent(self, limit: int = 20) -> list[Memory]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT id, content, category
-                FROM memories
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+        connection = self._connect()
+        rows = connection.execute(
+            """
+            SELECT id, content, category
+            FROM memories
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
 
         return [
             Memory(id=row["id"], content=row["content"], category=row["category"])
             for row in rows
         ]
+
+    def close(self) -> None:
+        """Close the dedicated in-memory connection, if one exists."""
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    def __enter__(self) -> "SQLiteMemoryStore":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
