@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from .instructions import MARS_SYSTEM_INSTRUCTIONS
 from .memory import MemoryManager
 
 
@@ -29,7 +30,10 @@ class Mars:
         self.memory = memory
 
     def respond(self, message: str, history: list[Message] | None = None) -> str:
-        messages = list(history or [])
+        messages = [
+            Message(role="system", content=MARS_SYSTEM_INSTRUCTIONS),
+            *(history or []),
+        ]
 
         if self.memory is not None:
             memories = self.memory.recall(message)
