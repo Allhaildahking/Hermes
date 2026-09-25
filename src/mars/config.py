@@ -12,6 +12,8 @@ class Settings:
         "MARS_DATABASE_URL",
         "sqlite:///data/mars.db",
     )
+    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
+    gemini_model: str = os.getenv("MARS_GEMINI_MODEL", "gemini-3.8-flash")
 
 
 settings = Settings()
